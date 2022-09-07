@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <todo version="0.1.20">
-    <note priority="medium" time="1661360881">
+    <note priority="medium" time="1661360881" done="1662562779">
         allreduce checks for matching function_space not matching sizes
     </note>
-    <note priority="medium" time="1661360920">
+    <note priority="medium" time="1661360920" done="1662562783">
         test for allreduce checking function_space not sizes
     </note>
     <note priority="medium" time="1661360998">

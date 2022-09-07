@@ -39,15 +39,16 @@ class NewEnsemble(object):
         :arg f: The a :class:`.Function` to allreduce.
         :arg f_reduced: the result of the reduction.
         :arg op: MPI reduction operator.
-        :raises ValueError: if communicators mismatch, or function sizes mismatch.
+        :raises ValueError: if communicators mismatch, or function spaces mismatch.
         """
         if MPI.Comm.Compare(f_reduced.comm, f.comm) not in {MPI.CONGRUENT, MPI.IDENT}:
             raise ValueError("Mismatching communicators for functions")
         if MPI.Comm.Compare(f.comm, self.comm) not in {MPI.CONGRUENT, MPI.IDENT}:
             raise ValueError("Function communicator does not match space communicator")
+        if f_reduced.function_space() != f.function_space():
+            raise ValueError("Mismatching function spaces for functions")
+
         with f_reduced.dat.vec_wo as vout, f.dat.vec_ro as vin:
-            if vout.getSizes() != vin.getSizes():
-                raise ValueError("Mismatching sizes")
             self.ensemble_comm.Allreduce(vin.array_r, vout.array, op=op)
         return f_reduced
 

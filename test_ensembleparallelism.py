@@ -119,6 +119,19 @@ def test_comm_manager_allreduce():
     with pytest.raises(ValueError):
         manager.allreduce(f, g)
 
+    # same size but different function spaces
+    mesh4 = fd.UnitSquareMesh(4, 2, comm=manager.comm)
+    mesh5 = fd.UnitSquareMesh(2, 4, comm=manager.comm)
+
+    V4 = fd.FunctionSpace(mesh4, "DG", 0)
+    V5 = fd.FunctionSpace(mesh5, "DG", 0)
+
+    f4 = fd.Function(V4)
+    f5 = fd.Function(V5)
+
+    with pytest.raises(ValueError):
+        manager.allreduce(f4, f5)
+
 
 @pytest.mark.parallel(nprocs=8)
 def test_blocking_send_recv():
