@@ -62,6 +62,33 @@ def test_ensemble_reduce(root):
 
 
 @pytest.mark.parallel(nprocs=6)
+@pytest.mark.parametrize("root", roots)
+def test_ensemble_bcast(root):
+    manager = NewEnsemble(fd.COMM_WORLD, 2)
+
+    mesh = fd.UnitSquareMesh(10, 10, comm=manager.comm)
+
+    x, y = fd.SpatialCoordinate(mesh)
+
+    V = fd.FunctionSpace(mesh, "CG", 1)
+    u_correct = fd.Function(V)
+    u = fd.Function(V)
+
+    q = fd.Constant(manager.ensemble_comm.rank + 1)
+    u.interpolate(fd.sin(q*fd.pi*x)*fd.cos(q*fd.pi*y))
+
+    if root is None:
+        manager.bcast(u)
+        root = 0
+    else:
+        manager.bcast(u, root=root)
+
+    u_correct.interpolate(fd.sin((root+1)*fd.pi*x)*fd.cos((root+1)*fd.pi*y))
+
+    assert fd.errornorm(u_correct, u) < 1e-4
+
+
+@pytest.mark.parallel(nprocs=6)
 def test_ensemble_solvers():
     # this test uses linearity of the equation to solve two problems
     # with different RHS on different subcommunicators,

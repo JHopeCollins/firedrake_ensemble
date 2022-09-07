@@ -74,6 +74,21 @@ class NewEnsemble(object):
             self.ensemble_comm.Reduce(vin.array_r, vout.array, op=op, root=root)
         return f_reduced
 
+    def bcast(self, f, root=0):
+        """
+        Broadcast a function f over :attr:`ensemble_comm` from rank root
+
+        :arg f: The :class:`.Function` to broadcast.
+        :arg root: rank to broadcast from
+        :raises ValueError: if communicators mismatch.
+        """
+        if MPI.Comm.Compare(f.comm, self.comm) not in {MPI.CONGRUENT, MPI.IDENT}:
+            raise ValueError("Function communicator does not match space communicator")
+
+        with f.dat.vec as vec:
+            self.ensemble_comm.Bcast(vec.array, root=root)
+        return f
+
     def __del__(self):
         if hasattr(self, "comm"):
             self.comm.Free()
