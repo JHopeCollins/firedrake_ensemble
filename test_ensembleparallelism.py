@@ -27,6 +27,40 @@ def test_ensemble_allreduce():
 
     assert fd.errornorm(u_correct, usum) < 1e-4
 
+
+roots = [None, 0, 1]
+
+
+@pytest.mark.parallel(nprocs=6)
+@pytest.mark.parametrize("root", roots)
+def test_ensemble_reduce(root):
+    manager = NewEnsemble(fd.COMM_WORLD, 2)
+
+    mesh = fd.UnitSquareMesh(10, 10, comm=manager.comm)
+
+    x, y = fd.SpatialCoordinate(mesh)
+
+    V = fd.FunctionSpace(mesh, "CG", 1)
+    u_correct = fd.Function(V)
+    u = fd.Function(V)
+    usum = fd.Function(V)
+
+    u_correct.interpolate(fd.sin(fd.pi*x)*fd.cos(fd.pi*y) + fd.sin(2*fd.pi*x)*fd.cos(2*fd.pi*y) + fd.sin(3*fd.pi*x)*fd.cos(3*fd.pi*y))
+    q = fd.Constant(manager.ensemble_comm.rank + 1)
+    u.interpolate(fd.sin(q*fd.pi*x)*fd.cos(q*fd.pi*y))
+    usum.assign(10)             # Check that the output gets zeroed.
+    if root is None:
+        manager.reduce(u, usum)
+        root = 0
+    else:
+        manager.reduce(u, usum, root=root)
+
+    if manager.ensemble_comm.rank == root:
+        assert fd.errornorm(u_correct, usum) < 1e-4
+    else:
+        assert fd.errornorm(fd.Constant(10), usum) < 1e-4
+
+
 @pytest.mark.parallel(nprocs=6)
 def test_ensemble_solvers():
     # this test uses linearity of the equation to solve two problems
@@ -131,6 +165,50 @@ def test_comm_manager_allreduce():
 
     with pytest.raises(ValueError):
         manager.allreduce(f4, f5)
+
+
+@pytest.mark.parallel(nprocs=2)
+def test_comm_manager_reduce():
+    manager = NewEnsemble(fd.COMM_WORLD, 1)
+
+    mesh = fd.UnitSquareMesh(1, 1, comm=manager.global_comm)
+
+    mesh2 = fd.UnitSquareMesh(2, 2, comm=manager.ensemble_comm)
+
+    V = fd.FunctionSpace(mesh, "CG", 1)
+    V2 = fd.FunctionSpace(mesh2, "CG", 1)
+
+    f = fd.Function(V)
+    f2 = fd.Function(V2)
+
+    # different function communicators
+    with pytest.raises(ValueError):
+        manager.reduce(f, f2)
+
+    f3 = fd.Function(V2)
+
+    # same function communicators, but doesn't match ensembles spatial communicator
+    with pytest.raises(ValueError):
+        manager.reduce(f3, f2)
+
+    # same function communicator but different function spaces
+    V3 = fd.FunctionSpace(mesh, "DG", 0)
+    g = fd.Function(V3)
+    with pytest.raises(ValueError):
+        manager.reduce(f, g)
+
+    # same size but different function spaces
+    mesh4 = fd.UnitSquareMesh(4, 2, comm=manager.comm)
+    mesh5 = fd.UnitSquareMesh(2, 4, comm=manager.comm)
+
+    V4 = fd.FunctionSpace(mesh4, "DG", 0)
+    V5 = fd.FunctionSpace(mesh5, "DG", 0)
+
+    f4 = fd.Function(V4)
+    f5 = fd.Function(V5)
+
+    with pytest.raises(ValueError):
+        manager.reduce(f4, f5)
 
 
 @pytest.mark.parallel(nprocs=8)

@@ -1,6 +1,7 @@
 from pyop2.mpi import MPI
 from itertools import zip_longest
 
+
 class NewEnsemble(object):
     def __init__(self, comm, M):
         """
@@ -50,6 +51,27 @@ class NewEnsemble(object):
 
         with f_reduced.dat.vec_wo as vout, f.dat.vec_ro as vin:
             self.ensemble_comm.Allreduce(vin.array_r, vout.array, op=op)
+        return f_reduced
+
+    def reduce(self, f, f_reduced, op=MPI.SUM, root=0):
+        """
+        Reduce a function f into f_reduced over :attr:`ensemble_comm` to rank root
+
+        :arg f: The a :class:`.Function` to reduce.
+        :arg f_reduced: the result of the reduction on rank root.
+        :arg op: MPI reduction operator.
+        :arg root: rank to reduce to
+        :raises ValueError: if communicators mismatch, or function spaces mismatch.
+        """
+        if MPI.Comm.Compare(f_reduced.comm, f.comm) not in {MPI.CONGRUENT, MPI.IDENT}:
+            raise ValueError("Mismatching communicators for functions")
+        if MPI.Comm.Compare(f.comm, self.comm) not in {MPI.CONGRUENT, MPI.IDENT}:
+            raise ValueError("Function communicator does not match space communicator")
+        if f_reduced.function_space() != f.function_space():
+            raise ValueError("Mismatching function spaces for functions")
+
+        with f_reduced.dat.vec_wo as vout, f.dat.vec_ro as vin:
+            self.ensemble_comm.Reduce(vin.array_r, vout.array, op=op, root=root)
         return f_reduced
 
     def __del__(self):
