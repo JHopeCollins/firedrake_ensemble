@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<todo version="0.1.20">
+    <note priority="medium" time="1661360881">
+        allreduce checks for matching function_space not matching sizes
+    </note>
+    <note priority="medium" time="1661360920">
+        test for allreduce checking function_space not sizes
+    </note>
+    <note priority="medium" time="1661360998">
+        send variant using pyop2 context manager
+    </note>
+    <note priority="medium" time="1661361014">
+        test for send variant using pyop2 context manager
+    </note>
+    <note priority="medium" time="1661361036">
+        benchmark for send variants
+    </note>
+    <note priority="medium" time="1661361065">
+        recv variant using pyop2 context manager
+    </note>
+    <note priority="medium" time="1661361080">
+        test for recv variant using pyop2 context manager
+    </note>
+    <note priority="medium" time="1661361089">
+        benchmark for recv variants
+    </note>
+</todo>
