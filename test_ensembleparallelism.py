@@ -114,19 +114,29 @@ def test_ensemble_reduce(root, ncpt):
 
 @pytest.mark.parallel(nprocs=6)
 @pytest.mark.parametrize("root", roots)
-def test_ensemble_bcast(root):
+@pytest.mark.parametrize("ncpt", ncpts)
+def test_ensemble_bcast(root, ncpt):
     manager = NewEnsemble(fd.COMM_WORLD, 2)
+    ensemble_rank = manager.ensemble_comm.rank
 
     mesh = fd.UnitSquareMesh(10, 10, comm=manager.comm)
 
     x, y = fd.SpatialCoordinate(mesh)
 
-    V = fd.FunctionSpace(mesh, "CG", 1)
-    u_correct = fd.Function(V)
-    u = fd.Function(V)
+    # unique function for each rank / component index pair
+    def func(rank, cpt=0):
+        return fd.sin(cpt + (rank+1)*fd.pi*x)*fd.cos(cpt + (rank+1)*fd.pi*y)
 
-    q = fd.Constant(manager.ensemble_comm.rank + 1)
-    u.interpolate(fd.sin(q*fd.pi*x)*fd.cos(q*fd.pi*y))
+    # mixed space of dimension ncpt
+    V = fd.FunctionSpace(mesh, "CG", 1)
+    W = fold(mul, [V for _ in range(ncpt)])
+
+    u_correct = fd.Function(W)
+    u = fd.Function(W)
+
+    # initialise local function
+    for cpt, v in enumerate(u.split()):
+        v.interpolate(func(ensemble_rank, cpt))
 
     if root is None:
         manager.bcast(u)
@@ -134,7 +144,9 @@ def test_ensemble_bcast(root):
     else:
         manager.bcast(u, root=root)
 
-    u_correct.interpolate(fd.sin((root+1)*fd.pi*x)*fd.cos((root+1)*fd.pi*y))
+    # broadcasted function
+    for cpt, v in enumerate(u_correct.split()):
+        v.interpolate(func(root, cpt))
 
     assert fd.errornorm(u_correct, u) < 1e-4
 
