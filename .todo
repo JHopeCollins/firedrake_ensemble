@@ -24,4 +24,34 @@
     <note priority="medium" time="1661361089">
         benchmark for recv variants
     </note>
+    <note priority="medium" time="1662620344">
+        sendrecv impl
+    </note>
+    <note priority="medium" time="1662620354">
+        sendrecv test
+    </note>
+    <note priority="medium" time="1662620401">
+        isendrecv impl
+    </note>
+    <note priority="medium" time="1662620407">
+        isendrecv test
+    </note>
+    <note priority="medium" time="1662620420">
+        iallreduce impl
+    </note>
+    <note priority="medium" time="1662620427">
+        iallreduce test
+    </note>
+    <note priority="medium" time="1662620435">
+        ireduce impl
+    </note>
+    <note priority="medium" time="1662620441">
+        ireduce test
+    </note>
+    <note priority="medium" time="1662620448">
+        ibcast impl
+    </note>
+    <note priority="medium" time="1662620453">
+        ibcast test
+    </note>
 </todo>

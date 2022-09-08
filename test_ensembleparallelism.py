@@ -3,32 +3,59 @@ from pyop2.mpi import MPI
 import pytest
 import time
 
+from operator import mul
+from functools import reduce as fold
+
 from ensemble import NewEnsemble
 
 
+max_ncpts = 3
+ncpts = [i for i in range(1, max_ncpts + 1)]
+
+max_root = 1
+roots = [i for i in range(0, max_root + 1)] + [None]
+
+
 @pytest.mark.parallel(nprocs=6)
-def test_ensemble_allreduce():
+@pytest.mark.parametrize("ncpt", ncpts)
+def test_ensemble_allreduce(ncpt):
     manager = NewEnsemble(fd.COMM_WORLD, 2)
+    ensemble_size = manager.ensemble_comm.size
+    ensemble_rank = manager.ensemble_comm.rank
 
     mesh = fd.UnitSquareMesh(10, 10, comm=manager.comm)
 
     x, y = fd.SpatialCoordinate(mesh)
 
-    V = fd.FunctionSpace(mesh, "CG", 1)
-    u_correct = fd.Function(V)
-    u = fd.Function(V)
-    usum = fd.Function(V)
+    # unique function for each rank / component index pair
+    def func(rank, cpt=0):
+        return fd.sin(cpt + (rank+1)*fd.pi*x)*fd.cos(cpt + (rank+1)*fd.pi*y)
 
-    u_correct.interpolate(fd.sin(fd.pi*x)*fd.cos(fd.pi*y) + fd.sin(2*fd.pi*x)*fd.cos(2*fd.pi*y) + fd.sin(3*fd.pi*x)*fd.cos(3*fd.pi*y))
-    q = fd.Constant(manager.ensemble_comm.rank + 1)
-    u.interpolate(fd.sin(q*fd.pi*x)*fd.cos(q*fd.pi*y))
-    usum.assign(10)             # Check that the output gets zeroed.
+    # mixed space of dimension ncpt
+    V = fd.FunctionSpace(mesh, "CG", 1)
+    W = fold(mul, [V for _ in range(ncpt)])
+
+    u_correct = fd.Function(W)
+    u = fd.Function(W)
+    usum = fd.Function(W)
+
+    for v_correct, v, vsum in zip(u_correct.split(), u.split(), usum.split()):
+        v_correct.assign(0)
+        v.assign(0)
+        vsum.assign(10)
+
+    # initialise local function
+    for cpt, v in enumerate(u.split()):
+        v.interpolate(func(ensemble_rank, cpt))
+
+    # calculate sum of all ranks
+    for cpt, v in enumerate(u_correct.split()):
+        for rnk in range(ensemble_size):
+            v.interpolate(v + func(rnk, cpt))
+
     manager.allreduce(u, usum)
 
     assert fd.errornorm(u_correct, usum) < 1e-4
-
-
-roots = [None, 0, 1]
 
 
 @pytest.mark.parallel(nprocs=6)
@@ -49,6 +76,7 @@ def test_ensemble_reduce(root):
     q = fd.Constant(manager.ensemble_comm.rank + 1)
     u.interpolate(fd.sin(q*fd.pi*x)*fd.cos(q*fd.pi*y))
     usum.assign(10)             # Check that the output gets zeroed.
+
     if root is None:
         manager.reduce(u, usum)
         root = 0
