@@ -50,8 +50,8 @@ def test_ensemble_allreduce(ncpt):
 
     # calculate sum of all ranks
     for cpt, v in enumerate(u_correct.split()):
-        for rnk in range(ensemble_size):
-            v.interpolate(v + func(rnk, cpt))
+        for rank in range(ensemble_size):
+            v.interpolate(v + func(rank, cpt))
 
     manager.allreduce(u, usum)
 
@@ -60,33 +60,56 @@ def test_ensemble_allreduce(ncpt):
 
 @pytest.mark.parallel(nprocs=6)
 @pytest.mark.parametrize("root", roots)
-def test_ensemble_reduce(root):
+@pytest.mark.parametrize("ncpt", ncpts)
+def test_ensemble_reduce(root, ncpt):
     manager = NewEnsemble(fd.COMM_WORLD, 2)
+    ensemble_size = manager.ensemble_comm.size
+    ensemble_rank = manager.ensemble_comm.rank
 
     mesh = fd.UnitSquareMesh(10, 10, comm=manager.comm)
 
     x, y = fd.SpatialCoordinate(mesh)
 
+    # unique function for each rank / component index pair
+    def func(rank, cpt=0):
+        return fd.sin(cpt + (rank+1)*fd.pi*x)*fd.cos(cpt + (rank+1)*fd.pi*y)
+
+    # mixed space of dimension ncpt
     V = fd.FunctionSpace(mesh, "CG", 1)
-    u_correct = fd.Function(V)
-    u = fd.Function(V)
-    usum = fd.Function(V)
+    W = fold(mul, [V for _ in range(ncpt)])
 
-    u_correct.interpolate(fd.sin(fd.pi*x)*fd.cos(fd.pi*y) + fd.sin(2*fd.pi*x)*fd.cos(2*fd.pi*y) + fd.sin(3*fd.pi*x)*fd.cos(3*fd.pi*y))
-    q = fd.Constant(manager.ensemble_comm.rank + 1)
-    u.interpolate(fd.sin(q*fd.pi*x)*fd.cos(q*fd.pi*y))
-    usum.assign(10)             # Check that the output gets zeroed.
+    u_correct = fd.Function(W).assign(0)
+    u = fd.Function(W).assign(0)
+    usum = fd.Function(W).assign(10)
 
+    for v_correct, v, vsum in zip(u_correct.split(), u.split(), usum.split()):
+        v_correct.assign(0)
+        v.assign(0)
+        vsum.assign(10)
+
+    usum0 = usum.copy(deepcopy=True)
+
+    # initialise local function
+    for cpt, v in enumerate(u.split()):
+        v.interpolate(func(ensemble_rank, cpt))
+
+    # calculate sum of all ranks
+    for cpt, v in enumerate(u_correct.split()):
+        for rank in range(ensemble_size):
+            v.interpolate(v + func(rank, cpt))
+
+    # check default root=0 works
     if root is None:
         manager.reduce(u, usum)
         root = 0
     else:
         manager.reduce(u, usum, root=root)
 
-    if manager.ensemble_comm.rank == root:
+    # test
+    if ensemble_rank == root:
         assert fd.errornorm(u_correct, usum) < 1e-4
     else:
-        assert fd.errornorm(fd.Constant(10), usum) < 1e-4
+        assert fd.errornorm(usum0, usum) < 1e-4
 
 
 @pytest.mark.parallel(nprocs=6)

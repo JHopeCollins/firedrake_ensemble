@@ -70,8 +70,11 @@ class NewEnsemble(object):
         if f_reduced.function_space() != f.function_space():
             raise ValueError("Mismatching function spaces for functions")
 
-        with f_reduced.dat.vec_wo as vout, f.dat.vec_ro as vin:
+        # need to use `vec` not `vec_wo` for f_reduced otherwise function will be blanked out
+        # when rank!=root because `vec_wo` doesn't copy over existing data into the pyop2 vector
+        with f_reduced.dat.vec as vout, f.dat.vec_ro as vin:
             self.ensemble_comm.Reduce(vin.array_r, vout.array, op=op, root=root)
+
         return f_reduced
 
     def bcast(self, f, root=0):
