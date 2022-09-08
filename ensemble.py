@@ -33,6 +33,23 @@ class NewEnsemble(object):
         assert self.comm.size == M
         assert self.ensemble_comm.size == (size // M)
 
+    def _check_function(self, f, g=None):
+        """
+        Check if function f (and possibly a second function g) is a valid argument for ensemble mpi routines
+
+        :arg f: The function to check
+        :arg g: Second function to check
+        :raises ValueError: if function communicators mismatch each other or the ensemble spatial communicator, or is the functions are in different spaces
+        """
+        if MPI.Comm.Compare(f.comm, self.comm) not in {MPI.CONGRUENT, MPI.IDENT}:
+            raise ValueError("Function communicator does not match space communicator")
+
+        if g is not None:
+            if MPI.Comm.Compare(f.comm, g.comm) not in {MPI.CONGRUENT, MPI.IDENT}:
+                raise ValueError("Mismatching communicators for functions")
+            if f.function_space() != g.function_space():
+                raise ValueError("Mismatching function spaces for functions")
+
     def allreduce(self, f, f_reduced, op=MPI.SUM):
         """
         Allreduce a function f into f_reduced over :attr:`ensemble_comm`.
@@ -40,14 +57,9 @@ class NewEnsemble(object):
         :arg f: The a :class:`.Function` to allreduce.
         :arg f_reduced: the result of the reduction.
         :arg op: MPI reduction operator.
-        :raises ValueError: if communicators mismatch, or function spaces mismatch.
+        :raises ValueError: if function communicators mismatch each other or the ensemble spatial communicator, or is the functions are in different spaces
         """
-        if MPI.Comm.Compare(f_reduced.comm, f.comm) not in {MPI.CONGRUENT, MPI.IDENT}:
-            raise ValueError("Mismatching communicators for functions")
-        if MPI.Comm.Compare(f.comm, self.comm) not in {MPI.CONGRUENT, MPI.IDENT}:
-            raise ValueError("Function communicator does not match space communicator")
-        if f_reduced.function_space() != f.function_space():
-            raise ValueError("Mismatching function spaces for functions")
+        self._check_function(f, f_reduced)
 
         with f_reduced.dat.vec_wo as vout, f.dat.vec_ro as vin:
             self.ensemble_comm.Allreduce(vin.array_r, vout.array, op=op)
@@ -61,14 +73,9 @@ class NewEnsemble(object):
         :arg f_reduced: the result of the reduction on rank root.
         :arg op: MPI reduction operator.
         :arg root: rank to reduce to
-        :raises ValueError: if communicators mismatch, or function spaces mismatch.
+        :raises ValueError: if function communicators mismatch each other or the ensemble spatial communicator, or is the functions are in different spaces
         """
-        if MPI.Comm.Compare(f_reduced.comm, f.comm) not in {MPI.CONGRUENT, MPI.IDENT}:
-            raise ValueError("Mismatching communicators for functions")
-        if MPI.Comm.Compare(f.comm, self.comm) not in {MPI.CONGRUENT, MPI.IDENT}:
-            raise ValueError("Function communicator does not match space communicator")
-        if f_reduced.function_space() != f.function_space():
-            raise ValueError("Mismatching function spaces for functions")
+        self._check_function(f, f_reduced)
 
         # need to use `vec` not `vec_wo` for f_reduced otherwise function will be blanked out
         # when rank!=root because `vec_wo` doesn't copy over existing data into the pyop2 vector
@@ -83,10 +90,9 @@ class NewEnsemble(object):
 
         :arg f: The :class:`.Function` to broadcast.
         :arg root: rank to broadcast from
-        :raises ValueError: if communicators mismatch.
+        :raises ValueError: if function communicator mismatches the ensemble spatial communicator.
         """
-        if MPI.Comm.Compare(f.comm, self.comm) not in {MPI.CONGRUENT, MPI.IDENT}:
-            raise ValueError("Function communicator does not match space communicator")
+        self._check_function(f)
 
         with f.dat.vec as vec:
             self.ensemble_comm.Bcast(vec.array, root=root)
@@ -108,9 +114,9 @@ class NewEnsemble(object):
         :arg f: The a :class:`.Function` to send
         :arg dest: the rank to send to
         :arg tag: the tag of the message
+        :raises ValueError: if function communicator mismatches the ensemble spatial communicator.
         """
-        if MPI.Comm.Compare(f.comm, self.comm) not in {MPI.CONGRUENT, MPI.IDENT}:
-            raise ValueError("Function communicator does not match space communicator")
+        self._check_function(f)
         for dat in f.dat:
             self.ensemble_comm.Send(dat.data_ro, dest=dest, tag=tag)
 
@@ -123,9 +129,9 @@ class NewEnsemble(object):
         :arg source: the rank to receive from
         :arg tag: the tag of the message
         :arg statuses: MPI.Status objects (one for each of f.split() or None).
+        :raises ValueError: if function communicator mismatches the ensemble spatial communicator.
         """
-        if MPI.Comm.Compare(f.comm, self.comm) not in {MPI.CONGRUENT, MPI.IDENT}:
-            raise ValueError("Function communicator does not match space communicator")
+        self._check_function(f)
         if statuses is not None and len(statuses) != len(f.dat):
             raise ValueError("Need to provide enough status objects for all parts of the Function")
         for dat, status in zip_longest(f.dat, statuses or (), fillvalue=None):
@@ -140,9 +146,9 @@ class NewEnsemble(object):
         :arg dest: the rank to send to
         :arg tag: the tag of the message
         :returns: list of MPI.Request objects (one for each of f.split()).
+        :raises ValueError: if function communicator mismatches the ensemble spatial communicator.
         """
-        if MPI.Comm.Compare(f.comm, self.comm) not in {MPI.CONGRUENT, MPI.IDENT}:
-            raise ValueError("Function communicator does not match space communicator")
+        self._check_function(f)
         return [self.ensemble_comm.Isend(dat.data_ro, dest=dest, tag=tag)
                 for dat in f.dat]
 
@@ -155,8 +161,8 @@ class NewEnsemble(object):
         :arg source: the rank to receive from
         :arg tag: the tag of the message
         :returns: list of MPI.Request objects (one for each of f.split()).
+        :raises ValueError: if function communicator mismatches the ensemble spatial communicator.
         """
-        if MPI.Comm.Compare(f.comm, self.comm) not in {MPI.CONGRUENT, MPI.IDENT}:
-            raise ValueError("Function communicator does not match space communicator")
+        self._check_function(f)
         return [self.ensemble_comm.Irecv(dat.data, source=source, tag=tag)
                 for dat in f.dat]
