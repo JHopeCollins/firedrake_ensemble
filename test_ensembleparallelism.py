@@ -300,50 +300,15 @@ def test_comm_manager_reduce():
         manager.reduce(f4, f5)
 
 
-@pytest.mark.parallel(nprocs=8)
-def test_blocking_send_recv():
-    nprocs_spatial = 2
-    manager = NewEnsemble(fd.COMM_WORLD, nprocs_spatial)
-
-    mesh = fd.UnitSquareMesh(10, 10, comm=manager.comm)
-    V = fd.FunctionSpace(mesh, "CG", 1)
-    u = fd.Function(V)
-    x, y = fd.SpatialCoordinate(mesh)
-    u_correct = fd.Function(V).interpolate(fd.sin(2*fd.pi*x)*fd.cos(2*fd.pi*y))
-
-    ensemble_procno = manager.ensemble_comm.rank
-
-    if ensemble_procno == 0:
-        # before receiving, u should be 0
-        assert fd.norm(u) < 1e-8
-
-        manager.send(u_correct, dest=1, tag=0)
-        manager.recv(u, source=1, tag=1)
-
-        # after receiving, u should be like u_correct
-        assert fd.errornorm(u, u_correct) < 1e-8
-
-    if ensemble_procno == 1:
-        # before receiving, u should be 0
-        assert fd.norm(u) < 1e-8
-        manager.recv(u, source=0, tag=0)
-        manager.send(u, dest=0, tag=1)
-        # after receiving, u should be like u_correct
-        assert fd.errornorm(u, u_correct) < 1e-8
-
-    if ensemble_procno != 0 and ensemble_procno != 1:
-        # without receiving, u should be 0
-        assert fd.norm(u) < 1e-8
-
-
 @pytest.mark.parallel(nprocs=6)
 @pytest.mark.parametrize("ncpt", ncpts)
-def test_nonblocking_send_recv(ncpt):
+def test_blocking_send_recv(ncpt):
     manager = NewEnsemble(fd.COMM_WORLD, 2)
     ensemble_rank = manager.ensemble_comm.rank
+    ensemble_size = manager.ensemble_comm.size
 
-    source = 0
-    dest = 1
+    rank0 = 0
+    rank1 = 1
 
     mesh = fd.UnitSquareMesh(10, 10, comm=manager.comm)
 
@@ -362,19 +327,84 @@ def test_nonblocking_send_recv(ncpt):
 
     # function to send
     for cpt, v in enumerate(u_expect.split()):
-        v.interpolate(func(source, cpt))
+        v.interpolate(func(ensemble_size, cpt))
 
-    if ensemble_rank == source:
-        requests = manager.isend(u_expect, dest=dest, tag=0)
-        MPI.Request.waitall(requests)
-    elif ensemble_rank == dest:
+    if ensemble_rank == rank0:
         # before receiving, u should be 0
         assert fd.norm(u) < 1e-8
 
-        requests = manager.irecv(u, source=source, tag=0)
-        MPI.Request.waitall(requests)
+        manager.send(u_expect, dest=rank1, tag=rank0)
+        manager.recv(u, source=rank1, tag=rank1)
 
         # after receiving, u should be like u_expect
         assert fd.errornorm(u, u_expect) < 1e-8
+
+    elif ensemble_rank == rank1:
+        # before receiving, u should be 0
+        assert fd.norm(u) < 1e-8
+
+        manager.recv(u, source=rank0, tag=rank0)
+        manager.send(u_expect, dest=rank0, tag=rank1)
+
+        # after receiving, u should be like u_expect
+        assert fd.errornorm(u, u_expect) < 1e-8
+
+    else:
+        assert fd.norm(u) < 1e-8
+
+
+@pytest.mark.parallel(nprocs=6)
+@pytest.mark.parametrize("ncpt", ncpts)
+def test_nonblocking_send_recv(ncpt):
+    manager = NewEnsemble(fd.COMM_WORLD, 2)
+    ensemble_rank = manager.ensemble_comm.rank
+    ensemble_size = manager.ensemble_comm.size
+
+    rank0 = 0
+    rank1 = 1
+
+    mesh = fd.UnitSquareMesh(10, 10, comm=manager.comm)
+
+    x, y = fd.SpatialCoordinate(mesh)
+
+    # unique function for each rank / component index pair
+    def func(rank, cpt=0):
+        return fd.sin(cpt + (rank+1)*fd.pi*x)*fd.cos(cpt + (rank+1)*fd.pi*y)
+
+    # mixed space of dimension ncpt
+    V = fd.FunctionSpace(mesh, "CG", 1)
+    W = fold(mul, [V for _ in range(ncpt)])
+
+    u = fd.Function(W).assign(0)
+    u_expect = fd.Function(W)
+
+    # function to send
+    for cpt, v in enumerate(u_expect.split()):
+        v.interpolate(func(ensemble_size, cpt))
+
+    if ensemble_rank == rank0:
+        # before receiving, u should be 0
+        assert fd.norm(u) < 1e-8
+
+        send_requests = manager.isend(u_expect, dest=rank1, tag=rank0)
+        recv_requests = manager.irecv(u, source=rank1, tag=rank1)
+        MPI.Request.waitall(send_requests)
+        MPI.Request.waitall(recv_requests)
+
+        # after receiving, u should be like u_expect
+        assert fd.errornorm(u, u_expect) < 1e-8
+
+    elif ensemble_rank == rank1:
+        # before receiving, u should be 0
+        assert fd.norm(u) < 1e-8
+
+        send_requests = manager.isend(u_expect, dest=rank0, tag=rank1)
+        recv_requests = manager.irecv(u, source=rank0, tag=rank0)
+        MPI.Request.waitall(send_requests)
+        MPI.Request.waitall(recv_requests)
+
+        # after receiving, u should be like u_expect
+        assert fd.errornorm(u, u_expect) < 1e-8
+
     else:
         assert fd.norm(u) < 1e-8
