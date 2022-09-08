@@ -1,7 +1,6 @@
 import firedrake as fd
 from pyop2.mpi import MPI
 import pytest
-import time
 
 from operator import mul
 from functools import reduce as fold
@@ -337,65 +336,44 @@ def test_blocking_send_recv():
         assert fd.norm(u) < 1e-8
 
 
-@pytest.mark.parallel(nprocs=8)
-def test_nonblocking_send_recv_mixed():
-    nprocs_spatial = 2
-    manager = NewEnsemble(fd.COMM_WORLD, nprocs_spatial)
+@pytest.mark.parallel(nprocs=6)
+@pytest.mark.parametrize("ncpt", ncpts)
+def test_nonblocking_send_recv(ncpt):
+    manager = NewEnsemble(fd.COMM_WORLD, 2)
+    ensemble_rank = manager.ensemble_comm.rank
 
-    # Big mesh so we blow through the MPI eager message limit.
-    mesh = fd.UnitSquareMesh(100, 100, comm=manager.comm)
-    V = fd.FunctionSpace(mesh, "CG", 1)
-    Q = fd.FunctionSpace(mesh, "DG", 0)
-    W = V*Q
-    w = fd.Function(W)
-    x, y = fd.SpatialCoordinate(mesh)
-    u, v = w.split()
-    u_expr = fd.sin(2*fd.pi*x)*fd.cos(2*fd.pi*y)
-    v_expr = x + y
-
-    w_expect = fd.Function(W)
-    u_expect, v_expect = w_expect.split()
-    u_expect.interpolate(u_expr)
-    v_expect.interpolate(v_expr)
-    ensemble_procno = manager.ensemble_comm.rank
-
-    if ensemble_procno == 0:
-        requests = manager.isend(w_expect, dest=1, tag=0)
-        MPI.Request.waitall(requests)
-    elif ensemble_procno == 1:
-        # before receiving, u should be 0
-        assert fd.norm(w) < 1e-8
-        requests = manager.irecv(w, source=0, tag=0)
-        # Bad check to see if the buffer has gone away.
-        time.sleep(2)
-        MPI.Request.waitall(requests)
-        assert fd.errornorm(u, u_expect) < 1e-8
-        assert fd.errornorm(v, v_expect) < 1e-8
-    else:
-        assert fd.norm(w) < 1e-8
-
-
-@pytest.mark.parallel(nprocs=8)
-def test_nonblocking_send_recv():
-    nprocs_spatial = 2
-    manager = NewEnsemble(fd.COMM_WORLD, nprocs_spatial)
+    source = 0
+    dest = 1
 
     mesh = fd.UnitSquareMesh(10, 10, comm=manager.comm)
-    V = fd.FunctionSpace(mesh, "CG", 1)
-    u = fd.Function(V)
-    x, y = fd.SpatialCoordinate(mesh)
-    u_expr = fd.sin(2*fd.pi*x)*fd.cos(2*fd.pi*y)
-    u_expect = fd.interpolate(u_expr, V)
-    ensemble_procno = manager.ensemble_comm.rank
 
-    if ensemble_procno == 0:
-        requests = manager.isend(u_expect, dest=1, tag=0)
+    x, y = fd.SpatialCoordinate(mesh)
+
+    # unique function for each rank / component index pair
+    def func(rank, cpt=0):
+        return fd.sin(cpt + (rank+1)*fd.pi*x)*fd.cos(cpt + (rank+1)*fd.pi*y)
+
+    # mixed space of dimension ncpt
+    V = fd.FunctionSpace(mesh, "CG", 1)
+    W = fold(mul, [V for _ in range(ncpt)])
+
+    u = fd.Function(W).assign(0)
+    u_expect = fd.Function(W)
+
+    # function to send
+    for cpt, v in enumerate(u_expect.split()):
+        v.interpolate(func(source, cpt))
+
+    if ensemble_rank == source:
+        requests = manager.isend(u_expect, dest=dest, tag=0)
         MPI.Request.waitall(requests)
-    elif ensemble_procno == 1:
+    elif ensemble_rank == dest:
         # before receiving, u should be 0
         assert fd.norm(u) < 1e-8
-        requests = manager.irecv(u, source=0, tag=0)
+
+        requests = manager.irecv(u, source=source, tag=0)
         MPI.Request.waitall(requests)
+
         # after receiving, u should be like u_expect
         assert fd.errornorm(u, u_expect) < 1e-8
     else:
