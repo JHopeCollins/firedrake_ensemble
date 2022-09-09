@@ -211,3 +211,24 @@ class NewEnsemble(object):
         self._check_function(f)
         return [self.ensemble_comm.Irecv(dat.data, source=source, tag=tag)
                 for dat in f.dat]
+
+    def sendrecv(self, fsend, dest, sendtag=0, frecv=None, source=MPI.ANY_SOURCE, recvtag=MPI.ANY_TAG, status=None):
+        """
+        Send (blocking) a function fsend and receive a function frecv over :attr:`ensemble_comm` to another
+        ensemble rank.
+
+        :arg fsend: The a :class:`.Function` to send
+        :arg dest: the rank to send to
+        :arg sendtag: the tag of the send message
+        :arg frecv: The a :class:`.Function` to receive into
+        :arg source: the rank to receive from
+        :arg recvtag: the tag of the received message
+        :arg status: MPI.Status object or None.
+        :raises ValueError: if function communicator mismatches the ensemble spatial communicator.
+        """
+        self._check_function(fsend)
+        self._check_function(frecv)
+        with fsend.dat.vec_ro as sendvec, frecv.dat.vec_wo as recvvec:
+            self.ensemble_comm.Sendrecv(sendvec, dest, sendtag=sendtag,
+                                        recvbuf=recvvec, source=source, recvtag=recvtag,
+                                        status=status)
