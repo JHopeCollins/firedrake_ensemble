@@ -6,6 +6,9 @@
     <note priority="medium" time="1661360920" done="1662562783">
         test for allreduce checking function_space not sizes
     </note>
+    <note priority="medium" time="1662620448" done="1662739489">
+        ibcast impl
+    </note>
     <note priority="medium" time="1661360998">
         send variant using pyop2 context manager
     </note>
@@ -48,10 +51,7 @@
     <note priority="medium" time="1662620441">
         ireduce test
     </note>
-    <note priority="medium" time="1662620448">
-        ibcast impl
-    </note>
-    <note priority="medium" time="1662620453">
+    <note priority="medium" time="1662620453" done="1662739491">
         ibcast test
     </note>
 </todo>

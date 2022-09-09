@@ -98,6 +98,20 @@ class NewEnsemble(object):
             self.ensemble_comm.Bcast(vec.array, root=root)
         return f
 
+    def ibcast(self, f, root=0):
+        """
+        Broadcast (non-blocking) a function f over :attr:`ensemble_comm` from rank root
+
+        :arg f: The :class:`.Function` to broadcast.
+        :arg root: rank to broadcast from
+        :returns: list of MPI.Request objects (one for each of f.split()).
+        :raises ValueError: if function communicator mismatches the ensemble spatial communicator.
+        """
+        self._check_function(f)
+
+        return [self.ensemble_comm.Ibcast(dat.data, root=root)
+                for dat in f.dat]
+
     def __del__(self):
         if hasattr(self, "comm"):
             self.comm.Free()
