@@ -6,6 +6,12 @@
     <note priority="medium" time="1661360920" done="1662562783">
         test for allreduce checking function_space not sizes
     </note>
+    <note priority="medium" time="1662620344" done="1662750352">
+        sendrecv impl
+    </note>
+    <note priority="medium" time="1662620354" done="1662750353">
+        sendrecv test
+    </note>
     <note priority="medium" time="1662620420" done="1662743022">
         iallreduce impl
     </note>
@@ -42,16 +48,10 @@
     <note priority="medium" time="1661361089">
         benchmark for recv variants
     </note>
-    <note priority="medium" time="1662620344" done="1662750352">
-        sendrecv impl
-    </note>
-    <note priority="medium" time="1662620354" done="1662750353">
-        sendrecv test
-    </note>
-    <note priority="medium" time="1662620401">
+    <note priority="medium" time="1662620401" done="1662751140">
         isendrecv impl
     </note>
-    <note priority="medium" time="1662620407">
+    <note priority="medium" time="1662620407" done="1662751141">
         isendrecv test
     </note>
 </todo>

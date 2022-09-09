@@ -249,7 +249,6 @@ def test_send_and_recv(ncpt, blocking):
 @pytest.mark.parametrize("ncpt", ncpts)
 @pytest.mark.parametrize("blocking", is_blocking)
 def test_sendrecv(ncpt, blocking):
-    if not blocking: return
     manager = NewEnsemble(fd.COMM_WORLD, 2)
     ensemble_rank = manager.ensemble_comm.rank
     ensemble_size = manager.ensemble_comm.size
@@ -279,8 +278,16 @@ def test_sendrecv(ncpt, blocking):
     for cpt, v in enumerate(u_expect.split()):
         v.interpolate(func(src_rank, cpt))
 
-    manager.sendrecv(usend, dst_rank, sendtag=ensemble_rank,
-                     frecv=urecv, source=src_rank, recvtag=src_rank)
+    if blocking:
+        sendrecv = manager.sendrecv
+    else:
+        sendrecv = manager.isendrecv
+
+    requests = sendrecv(usend, dst_rank, sendtag=ensemble_rank,
+                        frecv=urecv, source=src_rank, recvtag=src_rank)
+
+    if not blocking:
+        MPI.Request.Waitall(requests)
 
     # after receiving, u should be like u_expect
     assert fd.errornorm(urecv, u_expect) < 1e-8
