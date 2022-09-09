@@ -65,6 +65,21 @@ class NewEnsemble(object):
             self.ensemble_comm.Allreduce(vin.array_r, vout.array, op=op)
         return f_reduced
 
+    def iallreduce(self, f, f_reduced, op=MPI.SUM):
+        """
+        Allreduce (non-blocking) a function f into f_reduced over :attr:`ensemble_comm`.
+
+        :arg f: The a :class:`.Function` to allreduce.
+        :arg f_reduced: the result of the reduction.
+        :arg op: MPI reduction operator.
+        :returns: list of MPI.Request objects (one for each of f.split()).
+        :raises ValueError: if function communicators mismatch each other or the ensemble spatial communicator, or is the functions are in different spaces
+        """
+        self._check_function(f, f_reduced)
+
+        return [self.ensemble_comm.Iallreduce(fdat.data, rdat.data, op=op)
+                for fdat, rdat in zip(f.dat, f_reduced.dat)]
+
     def reduce(self, f, f_reduced, op=MPI.SUM, root=0):
         """
         Reduce a function f into f_reduced over :attr:`ensemble_comm` to rank root

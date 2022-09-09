@@ -9,6 +9,9 @@
     <note priority="medium" time="1662620435" done="1662742727">
         ireduce impl
     </note>
+    <note priority="medium" time="1662620441" done="1662742731">
+        ireduce test
+    </note>
     <note priority="medium" time="1662620448" done="1662739489">
         ibcast impl
     </note>
@@ -45,13 +48,10 @@
     <note priority="medium" time="1662620407">
         isendrecv test
     </note>
-    <note priority="medium" time="1662620420">
+    <note priority="medium" time="1662620420" done="1662743022">
         iallreduce impl
     </note>
-    <note priority="medium" time="1662620427">
+    <note priority="medium" time="1662620427" done="1662743023">
         iallreduce test
-    </note>
-    <note priority="medium" time="1662620441" done="1662742731">
-        ireduce test
     </note>
 </todo>

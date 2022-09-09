@@ -58,6 +58,49 @@ def test_ensemble_allreduce(ncpt):
 
 
 @pytest.mark.parallel(nprocs=6)
+@pytest.mark.parametrize("ncpt", ncpts)
+def test_ensemble_iallreduce(ncpt):
+    manager = NewEnsemble(fd.COMM_WORLD, 2)
+    ensemble_size = manager.ensemble_comm.size
+    ensemble_rank = manager.ensemble_comm.rank
+
+    mesh = fd.UnitSquareMesh(10, 10, comm=manager.comm)
+
+    x, y = fd.SpatialCoordinate(mesh)
+
+    # unique function for each rank / component index pair
+    def func(rank, cpt=0):
+        return fd.sin(cpt + (rank+1)*fd.pi*x)*fd.cos(cpt + (rank+1)*fd.pi*y)
+
+    # mixed space of dimension ncpt
+    V = fd.FunctionSpace(mesh, "CG", 1)
+    W = fold(mul, [V for _ in range(ncpt)])
+
+    u_correct = fd.Function(W)
+    u = fd.Function(W)
+    usum = fd.Function(W)
+
+    for v_correct, v, vsum in zip(u_correct.split(), u.split(), usum.split()):
+        v_correct.assign(0)
+        v.assign(0)
+        vsum.assign(10)
+
+    # initialise local function
+    for cpt, v in enumerate(u.split()):
+        v.interpolate(func(ensemble_rank, cpt))
+
+    # calculate sum of all ranks
+    for cpt, v in enumerate(u_correct.split()):
+        for rank in range(ensemble_size):
+            v.interpolate(v + func(rank, cpt))
+
+    requests = manager.iallreduce(u, usum)
+    MPI.Request.Waitall(requests)
+
+    assert fd.errornorm(u_correct, usum) < 1e-4
+
+
+@pytest.mark.parallel(nprocs=6)
 @pytest.mark.parametrize("root", roots)
 @pytest.mark.parametrize("ncpt", ncpts)
 def test_ensemble_reduce(root, ncpt):
