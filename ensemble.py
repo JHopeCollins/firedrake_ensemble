@@ -226,6 +226,7 @@ class NewEnsemble(object):
         :arg status: MPI.Status object or None.
         :raises ValueError: if function communicator mismatches the ensemble spatial communicator.
         """
+        # functions don't necessarily have to match
         self._check_function(fsend)
         self._check_function(frecv)
         with fsend.dat.vec_ro as sendvec, frecv.dat.vec_wo as recvvec:
@@ -247,6 +248,7 @@ class NewEnsemble(object):
         :returns: list of MPI.Request objects (one for each of fsend.split() and frecv.split()).
         :raises ValueError: if function communicator mismatches the ensemble spatial communicator.
         """
+        # functions don't necessarily have to match
         self._check_function(fsend)
         self._check_function(frecv)
         requests = []

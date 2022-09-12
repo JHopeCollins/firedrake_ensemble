@@ -8,57 +8,75 @@ from functools import reduce as fold
 from ensemble import NewEnsemble
 
 
-max_ncpts = 3
+max_ncpts = 2
 ncpts = [i for i in range(1, max_ncpts + 1)]
 
-max_root = 2
-roots = [i for i in range(0, max_root + 1)] + [None]
+max_root = -1
+roots = [None] + [i for i in range(0, max_root + 1)]
 
+# is_blocking = [True]
 is_blocking = [True, False]
 
 
+# unique profile on each mixed function component on each ensemble rank
+def function_profile(x, y, rank, cpt):
+    return fd.sin(cpt + (rank+1)*fd.pi*x)*fd.cos(cpt + (rank+1)*fd.pi*y)
+
+
+@pytest.fixture
+def ensemble():
+    if fd.COMM_WORLD.size == 1:
+        return
+    return NewEnsemble(fd.COMM_WORLD, 2)
+
+
+@pytest.fixture
+def mesh(ensemble):
+    if fd.COMM_WORLD.size == 1:
+        return
+    return fd.UnitSquareMesh(10, 10, comm=ensemble.comm)
+
+
+# mixed function space
+@pytest.fixture(params=ncpts)
+def W(request, mesh):
+    if fd.COMM_WORLD.size == 1:
+        return
+    V = fd.FunctionSpace(mesh, "CG", 1)
+    return fold(mul, [V for _ in range(request.param)])
+
+
+# initialise unique function on each rank
+@pytest.fixture
+def urank(ensemble, mesh, W):
+    if fd.COMM_WORLD.size == 1:
+        return
+    rank = ensemble.ensemble_comm.rank
+    u = fd.Function(W)
+    x, y = fd.SpatialCoordinate(mesh)
+    for cpt, v in enumerate(u.split()):
+        v.interpolate(function_profile(x, y, rank, cpt))
+    return u
+
+
 @pytest.mark.parallel(nprocs=6)
-@pytest.mark.parametrize("ncpt", ncpts)
 @pytest.mark.parametrize("blocking", is_blocking)
-def test_ensemble_allreduce(ncpt, blocking):
-    manager = NewEnsemble(fd.COMM_WORLD, 2)
-    ensemble_size = manager.ensemble_comm.size
-    ensemble_rank = manager.ensemble_comm.rank
-
-    mesh = fd.UnitSquareMesh(10, 10, comm=manager.comm)
-
+def test_ensemble_allreduce(ensemble, mesh, W, urank,
+                            blocking):
     x, y = fd.SpatialCoordinate(mesh)
 
-    # unique function for each rank / component index pair
-    def func(rank, cpt=0):
-        return fd.sin(cpt + (rank+1)*fd.pi*x)*fd.cos(cpt + (rank+1)*fd.pi*y)
-
-    # mixed space of dimension ncpt
-    V = fd.FunctionSpace(mesh, "CG", 1)
-    W = fold(mul, [V for _ in range(ncpt)])
-
-    u_correct = fd.Function(W)
-    u = fd.Function(W)
-    usum = fd.Function(W)
-
-    for v_correct, v, vsum in zip(u_correct.split(), u.split(), usum.split()):
-        v_correct.assign(0)
-        v.assign(0)
-        vsum.assign(10)
-
-    # initialise local function
-    for cpt, v in enumerate(u.split()):
-        v.interpolate(func(ensemble_rank, cpt))
+    u_correct = fd.Function(W).assign(0)
+    usum = fd.Function(W).assign(0)
 
     # calculate sum of all ranks
     for cpt, v in enumerate(u_correct.split()):
-        for rank in range(ensemble_size):
-            v.interpolate(v + func(rank, cpt))
+        for rank in range(ensemble.ensemble_comm.size):
+            v.interpolate(v + function_profile(x, y, rank, cpt))
 
     if blocking:
-        manager.allreduce(u, usum)
+        ensemble.allreduce(urank, usum)
     else:
-        requests = manager.iallreduce(u, usum)
+        requests = ensemble.iallreduce(urank, usum)
         MPI.Request.Waitall(requests)
 
     assert fd.errornorm(u_correct, usum) < 1e-4
@@ -68,12 +86,11 @@ def test_ensemble_allreduce(ncpt, blocking):
 @pytest.mark.parametrize("root", roots)
 @pytest.mark.parametrize("ncpt", ncpts)
 @pytest.mark.parametrize("blocking", is_blocking)
-def test_ensemble_reduce(root, ncpt, blocking):
-    manager = NewEnsemble(fd.COMM_WORLD, 2)
-    ensemble_size = manager.ensemble_comm.size
-    ensemble_rank = manager.ensemble_comm.rank
+def test_ensemble_reduce(ensemble, root, ncpt, blocking):
+    ensemble_size = ensemble.ensemble_comm.size
+    ensemble_rank = ensemble.ensemble_comm.rank
 
-    mesh = fd.UnitSquareMesh(10, 10, comm=manager.comm)
+    mesh = fd.UnitSquareMesh(10, 10, comm=ensemble.comm)
 
     x, y = fd.SpatialCoordinate(mesh)
 
@@ -106,9 +123,9 @@ def test_ensemble_reduce(root, ncpt, blocking):
             v.interpolate(v + func(rank, cpt))
 
     if blocking:
-        reduction = manager.reduce
+        reduction = ensemble.reduce
     else:
-        reduction = manager.ireduce
+        reduction = ensemble.ireduce
 
     # check default root=0 works
     if root is None:
@@ -131,11 +148,10 @@ def test_ensemble_reduce(root, ncpt, blocking):
 @pytest.mark.parametrize("root", roots)
 @pytest.mark.parametrize("ncpt", ncpts)
 @pytest.mark.parametrize("blocking", is_blocking)
-def test_ensemble_bcast(root, ncpt, blocking):
-    manager = NewEnsemble(fd.COMM_WORLD, 2)
-    ensemble_rank = manager.ensemble_comm.rank
+def test_ensemble_bcast(ensemble, root, ncpt, blocking):
+    ensemble_rank = ensemble.ensemble_comm.rank
 
-    mesh = fd.UnitSquareMesh(10, 10, comm=manager.comm)
+    mesh = fd.UnitSquareMesh(10, 10, comm=ensemble.comm)
 
     x, y = fd.SpatialCoordinate(mesh)
 
@@ -155,9 +171,9 @@ def test_ensemble_bcast(root, ncpt, blocking):
         v.interpolate(func(ensemble_rank, cpt))
 
     if blocking:
-        bcast = manager.bcast
+        bcast = ensemble.bcast
     else:
-        bcast = manager.ibcast
+        bcast = ensemble.ibcast
 
     # check default root=0 works
     if root is None:
@@ -179,15 +195,14 @@ def test_ensemble_bcast(root, ncpt, blocking):
 @pytest.mark.parallel(nprocs=6)
 @pytest.mark.parametrize("ncpt", ncpts)
 @pytest.mark.parametrize("blocking", is_blocking)
-def test_send_and_recv(ncpt, blocking):
-    manager = NewEnsemble(fd.COMM_WORLD, 2)
-    ensemble_rank = manager.ensemble_comm.rank
-    ensemble_size = manager.ensemble_comm.size
+def test_send_and_recv(ensemble, ncpt, blocking):
+    ensemble_rank = ensemble.ensemble_comm.rank
+    ensemble_size = ensemble.ensemble_comm.size
 
     rank0 = 0
     rank1 = 1
 
-    mesh = fd.UnitSquareMesh(10, 10, comm=manager.comm)
+    mesh = fd.UnitSquareMesh(10, 10, comm=ensemble.comm)
 
     x, y = fd.SpatialCoordinate(mesh)
 
@@ -207,11 +222,11 @@ def test_send_and_recv(ncpt, blocking):
         v.interpolate(func(ensemble_size, cpt))
 
     if blocking:
-        send = manager.send
-        recv = manager.recv
+        send = ensemble.send
+        recv = ensemble.recv
     else:
-        send = manager.isend
-        recv = manager.irecv
+        send = ensemble.isend
+        recv = ensemble.irecv
 
     if ensemble_rank == rank0:
         # before receiving, u should be 0
@@ -248,15 +263,14 @@ def test_send_and_recv(ncpt, blocking):
 @pytest.mark.parallel(nprocs=6)
 @pytest.mark.parametrize("ncpt", ncpts)
 @pytest.mark.parametrize("blocking", is_blocking)
-def test_sendrecv(ncpt, blocking):
-    manager = NewEnsemble(fd.COMM_WORLD, 2)
-    ensemble_rank = manager.ensemble_comm.rank
-    ensemble_size = manager.ensemble_comm.size
+def test_sendrecv(ensemble, ncpt, blocking):
+    ensemble_rank = ensemble.ensemble_comm.rank
+    ensemble_size = ensemble.ensemble_comm.size
 
     src_rank = (ensemble_rank - 1) % ensemble_size
     dst_rank = (ensemble_rank + 1) % ensemble_size
 
-    mesh = fd.UnitSquareMesh(10, 10, comm=manager.comm)
+    mesh = fd.UnitSquareMesh(10, 10, comm=ensemble.comm)
 
     x, y = fd.SpatialCoordinate(mesh)
 
@@ -279,9 +293,9 @@ def test_sendrecv(ncpt, blocking):
         v.interpolate(func(src_rank, cpt))
 
     if blocking:
-        sendrecv = manager.sendrecv
+        sendrecv = ensemble.sendrecv
     else:
-        sendrecv = manager.isendrecv
+        sendrecv = ensemble.isendrecv
 
     requests = sendrecv(usend, dst_rank, sendtag=ensemble_rank,
                         frecv=urecv, source=src_rank, recvtag=src_rank)
@@ -294,14 +308,13 @@ def test_sendrecv(ncpt, blocking):
 
 
 @pytest.mark.parallel(nprocs=6)
-def test_ensemble_solvers():
+def test_ensemble_solvers(ensemble):
     # this test uses linearity of the equation to solve two problems
     # with different RHS on different subcommunicators,
     # and compare the reduction with a problem solved with the sum
     # of the two RHS
-    manager = NewEnsemble(fd.COMM_WORLD, 2)
 
-    mesh = fd.UnitSquareMesh(10, 10, comm=manager.comm)
+    mesh = fd.UnitSquareMesh(10, 10, comm=ensemble.comm)
 
     x, y = fd.SpatialCoordinate(mesh)
 
@@ -310,7 +323,7 @@ def test_ensemble_solvers():
     f_separate = fd.Function(V)
 
     f_combined.interpolate(fd.sin(fd.pi*x)*fd.cos(fd.pi*y) + fd.sin(2*fd.pi*x)*fd.cos(2*fd.pi*y) + fd.sin(3*fd.pi*x)*fd.cos(3*fd.pi*y))
-    q = fd.Constant(manager.ensemble_comm.rank + 1)
+    q = fd.Constant(ensemble.ensemble_comm.rank + 1)
     f_separate.interpolate(fd.sin(q*fd.pi*x)*fd.cos(q*fd.pi*y))
 
     u = fd.TrialFunction(V)
@@ -339,7 +352,7 @@ def test_ensemble_solvers():
 
     combinedSolver.solve()
     separateSolver.solve()
-    manager.allreduce(u_separate, usum)
+    ensemble.allreduce(u_separate, usum)
 
     assert fd.errornorm(u_combined, usum) < 1e-4
 
@@ -357,11 +370,11 @@ def test_comm_manager_parallel():
 
 @pytest.mark.parallel(nprocs=2)
 def test_comm_manager_allreduce():
-    manager = NewEnsemble(fd.COMM_WORLD, 1)
+    ensemble = NewEnsemble(fd.COMM_WORLD, 1)
 
-    mesh = fd.UnitSquareMesh(1, 1, comm=manager.global_comm)
+    mesh = fd.UnitSquareMesh(1, 1, comm=ensemble.global_comm)
 
-    mesh2 = fd.UnitSquareMesh(2, 2, comm=manager.ensemble_comm)
+    mesh2 = fd.UnitSquareMesh(2, 2, comm=ensemble.ensemble_comm)
 
     V = fd.FunctionSpace(mesh, "CG", 1)
     V2 = fd.FunctionSpace(mesh2, "CG", 1)
@@ -371,23 +384,23 @@ def test_comm_manager_allreduce():
 
     # different function communicators
     with pytest.raises(ValueError):
-        manager.allreduce(f, f2)
+        ensemble.allreduce(f, f2)
 
     f3 = fd.Function(V2)
 
     # same function communicators, but doesn't match ensembles spatial communicator
     with pytest.raises(ValueError):
-        manager.allreduce(f3, f2)
+        ensemble.allreduce(f3, f2)
 
     # same function communicator but different function spaces
     V3 = fd.FunctionSpace(mesh, "DG", 0)
     g = fd.Function(V3)
     with pytest.raises(ValueError):
-        manager.allreduce(f, g)
+        ensemble.allreduce(f, g)
 
     # same size but different function spaces
-    mesh4 = fd.UnitSquareMesh(4, 2, comm=manager.comm)
-    mesh5 = fd.UnitSquareMesh(2, 4, comm=manager.comm)
+    mesh4 = fd.UnitSquareMesh(4, 2, comm=ensemble.comm)
+    mesh5 = fd.UnitSquareMesh(2, 4, comm=ensemble.comm)
 
     V4 = fd.FunctionSpace(mesh4, "DG", 0)
     V5 = fd.FunctionSpace(mesh5, "DG", 0)
@@ -396,16 +409,16 @@ def test_comm_manager_allreduce():
     f5 = fd.Function(V5)
 
     with pytest.raises(ValueError):
-        manager.allreduce(f4, f5)
+        ensemble.allreduce(f4, f5)
 
 
 @pytest.mark.parallel(nprocs=2)
 def test_comm_manager_reduce():
-    manager = NewEnsemble(fd.COMM_WORLD, 1)
+    ensemble = NewEnsemble(fd.COMM_WORLD, 1)
 
-    mesh = fd.UnitSquareMesh(1, 1, comm=manager.global_comm)
+    mesh = fd.UnitSquareMesh(1, 1, comm=ensemble.global_comm)
 
-    mesh2 = fd.UnitSquareMesh(2, 2, comm=manager.ensemble_comm)
+    mesh2 = fd.UnitSquareMesh(2, 2, comm=ensemble.ensemble_comm)
 
     V = fd.FunctionSpace(mesh, "CG", 1)
     V2 = fd.FunctionSpace(mesh2, "CG", 1)
@@ -415,23 +428,23 @@ def test_comm_manager_reduce():
 
     # different function communicators
     with pytest.raises(ValueError):
-        manager.reduce(f, f2)
+        ensemble.reduce(f, f2)
 
     f3 = fd.Function(V2)
 
     # same function communicators, but doesn't match ensembles spatial communicator
     with pytest.raises(ValueError):
-        manager.reduce(f3, f2)
+        ensemble.reduce(f3, f2)
 
     # same function communicator but different function spaces
     V3 = fd.FunctionSpace(mesh, "DG", 0)
     g = fd.Function(V3)
     with pytest.raises(ValueError):
-        manager.reduce(f, g)
+        ensemble.reduce(f, g)
 
     # same size but different function spaces
-    mesh4 = fd.UnitSquareMesh(4, 2, comm=manager.comm)
-    mesh5 = fd.UnitSquareMesh(2, 4, comm=manager.comm)
+    mesh4 = fd.UnitSquareMesh(4, 2, comm=ensemble.comm)
+    mesh5 = fd.UnitSquareMesh(2, 4, comm=ensemble.comm)
 
     V4 = fd.FunctionSpace(mesh4, "DG", 0)
     V5 = fd.FunctionSpace(mesh5, "DG", 0)
@@ -440,4 +453,4 @@ def test_comm_manager_reduce():
     f5 = fd.Function(V5)
 
     with pytest.raises(ValueError):
-        manager.reduce(f4, f5)
+        ensemble.reduce(f4, f5)
