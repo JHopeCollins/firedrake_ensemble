@@ -11,8 +11,9 @@ from ensemble import NewEnsemble
 max_ncpts = 2
 ncpts = [i for i in range(1, max_ncpts + 1)]
 
+min_root = 1
 max_root = 1
-roots = [None] + [i for i in range(0, max_root + 1)]
+roots = [None] + [i for i in range(min_root, max_root + 1)]
 
 # is_blocking = [True]
 is_blocking = [True, False]
@@ -129,29 +130,9 @@ def test_ensemble_reduce(ensemble, mesh, W, urank, urank_sum,
 
 @pytest.mark.parallel(nprocs=6)
 @pytest.mark.parametrize("root", roots)
-@pytest.mark.parametrize("ncpt", ncpts)
 @pytest.mark.parametrize("blocking", is_blocking)
-def test_ensemble_bcast(ensemble, root, ncpt, blocking):
-    ensemble_rank = ensemble.ensemble_comm.rank
-
-    mesh = fd.UnitSquareMesh(10, 10, comm=ensemble.comm)
-
-    x, y = fd.SpatialCoordinate(mesh)
-
-    # unique function for each rank / component index pair
-    def func(rank, cpt=0):
-        return fd.sin(cpt + (rank+1)*fd.pi*x)*fd.cos(cpt + (rank+1)*fd.pi*y)
-
-    # mixed space of dimension ncpt
-    V = fd.FunctionSpace(mesh, "CG", 1)
-    W = fold(mul, [V for _ in range(ncpt)])
-
-    u_correct = fd.Function(W)
-    u = fd.Function(W)
-
-    # initialise local function
-    for cpt, v in enumerate(u.split()):
-        v.interpolate(func(ensemble_rank, cpt))
+def test_ensemble_bcast(ensemble, mesh, W, urank,
+                        root, blocking):
 
     if blocking:
         bcast = ensemble.bcast
@@ -160,19 +141,23 @@ def test_ensemble_bcast(ensemble, root, ncpt, blocking):
 
     # check default root=0 works
     if root is None:
-        requests = bcast(u)
+        requests = bcast(urank)
         root = 0
     else:
-        requests = bcast(u, root=root)
+        requests = bcast(urank, root=root)
 
     if not blocking:
         MPI.Request.Waitall(requests)
 
     # broadcasted function
-    for cpt, v in enumerate(u_correct.split()):
-        v.interpolate(func(root, cpt))
+    u_correct = fd.Function(W)
 
-    assert fd.errornorm(u_correct, u) < 1e-4
+    x, y = fd.SpatialCoordinate(mesh)
+
+    for cpt, v in enumerate(u_correct.split()):
+        v.interpolate(function_profile(x, y, root, cpt))
+
+    assert fd.errornorm(u_correct, urank) < 1e-4
 
 
 @pytest.mark.parallel(nprocs=6)
