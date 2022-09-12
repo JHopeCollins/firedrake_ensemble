@@ -24,6 +24,14 @@ def function_profile(x, y, rank, cpt):
     return fd.sin(cpt + (rank+1)*fd.pi*x)*fd.cos(cpt + (rank+1)*fd.pi*y)
 
 
+def unique_function(mesh, rank, W):
+    u = fd.Function(W)
+    x, y = fd.SpatialCoordinate(mesh)
+    for cpt, v in enumerate(u.split()):
+        v.interpolate(function_profile(x, y, rank, cpt))
+    return u
+
+
 @pytest.fixture
 def ensemble():
     if fd.COMM_WORLD.size == 1:
@@ -56,12 +64,7 @@ def urank(ensemble, mesh, W):
     if fd.COMM_WORLD.size == 1:
         return
 
-    rank = ensemble.ensemble_comm.rank
-    u = fd.Function(W)
-    x, y = fd.SpatialCoordinate(mesh)
-    for cpt, v in enumerate(u.split()):
-        v.interpolate(function_profile(x, y, rank, cpt))
-    return u
+    return unique_function(mesh, ensemble.ensemble_comm.rank, W)
 
 
 # sum of urank across all ranks
@@ -71,10 +74,8 @@ def urank_sum(ensemble, mesh, W):
         return
 
     u = fd.Function(W).assign(0)
-    x, y = fd.SpatialCoordinate(mesh)
-    for cpt, v in enumerate(u.split()):
-        for rank in range(ensemble.ensemble_comm.size):
-            v.interpolate(v + function_profile(x, y, rank, cpt))
+    for rank in range(ensemble.ensemble_comm.size):
+        u.assign(u + unique_function(mesh, rank, W))
     return u
 
 
@@ -82,8 +83,6 @@ def urank_sum(ensemble, mesh, W):
 @pytest.mark.parametrize("blocking", is_blocking)
 def test_ensemble_allreduce(ensemble, mesh, W, urank, urank_sum,
                             blocking):
-
-    x, y = fd.SpatialCoordinate(mesh)
 
     u_reduce = fd.Function(W).assign(0)
 
@@ -101,8 +100,6 @@ def test_ensemble_allreduce(ensemble, mesh, W, urank, urank_sum,
 @pytest.mark.parametrize("blocking", is_blocking)
 def test_ensemble_reduce(ensemble, mesh, W, urank, urank_sum,
                          root, blocking):
-
-    x, y = fd.SpatialCoordinate(mesh)
 
     u_reduce = fd.Function(W).assign(10)
 
@@ -150,44 +147,24 @@ def test_ensemble_bcast(ensemble, mesh, W, urank,
         MPI.Request.Waitall(requests)
 
     # broadcasted function
-    u_correct = fd.Function(W)
-
-    x, y = fd.SpatialCoordinate(mesh)
-
-    for cpt, v in enumerate(u_correct.split()):
-        v.interpolate(function_profile(x, y, root, cpt))
+    u_correct = unique_function(mesh, root, W)
 
     assert fd.errornorm(u_correct, urank) < 1e-4
 
 
 @pytest.mark.parallel(nprocs=6)
-@pytest.mark.parametrize("ncpt", ncpts)
 @pytest.mark.parametrize("blocking", is_blocking)
-def test_send_and_recv(ensemble, ncpt, blocking):
+def test_send_and_recv(ensemble, mesh, W,
+                       blocking):
+
     ensemble_rank = ensemble.ensemble_comm.rank
     ensemble_size = ensemble.ensemble_comm.size
 
     rank0 = 0
     rank1 = 1
 
-    mesh = fd.UnitSquareMesh(10, 10, comm=ensemble.comm)
-
-    x, y = fd.SpatialCoordinate(mesh)
-
-    # unique function for each rank / component index pair
-    def func(rank, cpt=0):
-        return fd.sin(cpt + (rank+1)*fd.pi*x)*fd.cos(cpt + (rank+1)*fd.pi*y)
-
-    # mixed space of dimension ncpt
-    V = fd.FunctionSpace(mesh, "CG", 1)
-    W = fold(mul, [V for _ in range(ncpt)])
-
-    u = fd.Function(W).assign(0)
-    u_expect = fd.Function(W)
-
-    # function to send
-    for cpt, v in enumerate(u_expect.split()):
-        v.interpolate(func(ensemble_size, cpt))
+    usend = unique_function(mesh, ensemble_size, W)
+    urecv = fd.Function(W).assign(0)
 
     if blocking:
         send = ensemble.send
@@ -197,35 +174,24 @@ def test_send_and_recv(ensemble, ncpt, blocking):
         recv = ensemble.irecv
 
     if ensemble_rank == rank0:
-        # before receiving, u should be 0
-        assert fd.norm(u) < 1e-8
-
-        send_requests = send(u_expect, dest=rank1, tag=rank0)
-        recv_requests = recv(u, source=rank1, tag=rank1)
+        send_requests = send(usend, dest=rank1, tag=rank0)
+        recv_requests = recv(urecv, source=rank1, tag=rank1)
 
         if not blocking:
             MPI.Request.waitall(send_requests)
             MPI.Request.waitall(recv_requests)
 
-        # after receiving, u should be like u_expect
-        assert fd.errornorm(u, u_expect) < 1e-8
+        assert fd.errornorm(urecv, usend) < 1e-8
 
     elif ensemble_rank == rank1:
-        # before receiving, u should be 0
-        assert fd.norm(u) < 1e-8
-
-        recv_requests = recv(u, source=rank0, tag=rank0)
-        send_requests = send(u_expect, dest=rank0, tag=rank1)
+        recv_requests = recv(urecv, source=rank0, tag=rank0)
+        send_requests = send(usend, dest=rank0, tag=rank1)
 
         if not blocking:
             MPI.Request.waitall(send_requests)
             MPI.Request.waitall(recv_requests)
 
-        # after receiving, u should be like u_expect
-        assert fd.errornorm(u, u_expect) < 1e-8
-
-    else:
-        assert fd.norm(u) < 1e-8
+        assert fd.errornorm(urecv, usend) < 1e-8
 
 
 @pytest.mark.parallel(nprocs=6)
