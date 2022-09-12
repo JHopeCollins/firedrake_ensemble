@@ -15,7 +15,6 @@ min_root = 1
 max_root = 1
 roots = [None] + [i for i in range(min_root, max_root + 1)]
 
-# is_blocking = [True]
 is_blocking = [True, False]
 
 
@@ -224,33 +223,20 @@ def test_sendrecv(ensemble, mesh, W, urank,
 
 
 @pytest.mark.parallel(nprocs=6)
-def test_ensemble_solvers(ensemble):
+def test_ensemble_solvers(ensemble, W, urank, urank_sum):
     # this test uses linearity of the equation to solve two problems
     # with different RHS on different subcommunicators,
     # and compare the reduction with a problem solved with the sum
     # of the two RHS
 
-    mesh = fd.UnitSquareMesh(10, 10, comm=ensemble.comm)
-
-    x, y = fd.SpatialCoordinate(mesh)
-
-    V = fd.FunctionSpace(mesh, "CG", 1)
-    f_combined = fd.Function(V)
-    f_separate = fd.Function(V)
-
-    f_combined.interpolate(fd.sin(fd.pi*x)*fd.cos(fd.pi*y) + fd.sin(2*fd.pi*x)*fd.cos(2*fd.pi*y) + fd.sin(3*fd.pi*x)*fd.cos(3*fd.pi*y))
-    q = fd.Constant(ensemble.ensemble_comm.rank + 1)
-    f_separate.interpolate(fd.sin(q*fd.pi*x)*fd.cos(q*fd.pi*y))
-
-    u = fd.TrialFunction(V)
-    v = fd.TestFunction(V)
+    u = fd.TrialFunction(W)
+    v = fd.TestFunction(W)
     a = (fd.inner(u, v) + fd.inner(fd.grad(u), fd.grad(v)))*fd.dx
-    Lcombined = fd.inner(f_combined, v)*fd.dx
-    Lseparate = fd.inner(f_separate, v)*fd.dx
+    Lcombined = fd.inner(urank_sum, v)*fd.dx
+    Lseparate = fd.inner(urank, v)*fd.dx
 
-    u_combined = fd.Function(V)
-    u_separate = fd.Function(V)
-    usum = fd.Function(V)
+    u_combined = fd.Function(W)
+    u_separate = fd.Function(W)
 
     params = {'ksp_type': 'preonly',
               'pc_type': 'redundant',
@@ -268,6 +254,8 @@ def test_ensemble_solvers(ensemble):
 
     combinedSolver.solve()
     separateSolver.solve()
+
+    usum = fd.Function(W)
     ensemble.allreduce(u_separate, usum)
 
     assert fd.errornorm(u_combined, usum) < 1e-4
