@@ -15,7 +15,7 @@ min_root = 1
 max_root = 1
 roots = [None] + [i for i in range(min_root, max_root + 1)]
 
-is_blocking = [True, False]
+bools = [True, False]
 
 
 # unique profile on each mixed function component on each ensemble rank
@@ -79,7 +79,7 @@ def urank_sum(ensemble, mesh, W):
 
 
 @pytest.mark.parallel(nprocs=6)
-@pytest.mark.parametrize("blocking", is_blocking)
+@pytest.mark.parametrize("blocking", bools)
 def test_ensemble_allreduce(ensemble, mesh, W, urank, urank_sum,
                             blocking):
 
@@ -96,7 +96,7 @@ def test_ensemble_allreduce(ensemble, mesh, W, urank, urank_sum,
 
 @pytest.mark.parallel(nprocs=6)
 @pytest.mark.parametrize("root", roots)
-@pytest.mark.parametrize("blocking", is_blocking)
+@pytest.mark.parametrize("blocking", bools)
 def test_ensemble_reduce(ensemble, mesh, W, urank, urank_sum,
                          root, blocking):
 
@@ -126,7 +126,7 @@ def test_ensemble_reduce(ensemble, mesh, W, urank, urank_sum,
 
 @pytest.mark.parallel(nprocs=6)
 @pytest.mark.parametrize("root", roots)
-@pytest.mark.parametrize("blocking", is_blocking)
+@pytest.mark.parametrize("blocking", bools)
 def test_ensemble_bcast(ensemble, mesh, W, urank,
                         root, blocking):
 
@@ -152,9 +152,10 @@ def test_ensemble_bcast(ensemble, mesh, W, urank,
 
 
 @pytest.mark.parallel(nprocs=6)
-@pytest.mark.parametrize("blocking", is_blocking)
+@pytest.mark.parametrize("blocking", bools)
+@pytest.mark.parametrize("new_method", bools)
 def test_send_and_recv(ensemble, mesh, W,
-                       blocking):
+                       blocking, new_method):
 
     ensemble_rank = ensemble.ensemble_comm.rank
     ensemble_size = ensemble.ensemble_comm.size
@@ -166,9 +167,15 @@ def test_send_and_recv(ensemble, mesh, W,
     urecv = fd.Function(W).assign(0)
 
     if blocking:
-        send = ensemble.send
-        recv = ensemble.recv
+        if new_method:
+            send = ensemble.send_new
+            recv = ensemble.recv_new
+        else:
+            send = ensemble.send
+            recv = ensemble.recv
     else:
+        if new_method:
+            return
         send = ensemble.isend
         recv = ensemble.irecv
 
@@ -194,7 +201,7 @@ def test_send_and_recv(ensemble, mesh, W,
 
 
 @pytest.mark.parallel(nprocs=6)
-@pytest.mark.parametrize("blocking", is_blocking)
+@pytest.mark.parametrize("blocking", bools)
 def test_sendrecv(ensemble, mesh, W, urank,
                   blocking):
 

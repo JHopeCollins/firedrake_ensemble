@@ -6,11 +6,20 @@
     <note priority="medium" time="1661360920" done="1662562783">
         test for allreduce checking function_space not sizes
     </note>
+    <note priority="medium" time="1661360998" done="1663007151">
+        send variant using pyop2 context manager
+    </note>
     <note priority="medium" time="1662620344" done="1662750352">
         sendrecv impl
     </note>
     <note priority="medium" time="1662620354" done="1662750353">
         sendrecv test
+    </note>
+    <note priority="medium" time="1662620401" done="1662751140">
+        isendrecv impl
+    </note>
+    <note priority="medium" time="1662620407" done="1662751141">
+        isendrecv test
     </note>
     <note priority="medium" time="1662620420" done="1662743022">
         iallreduce impl
@@ -30,28 +39,19 @@
     <note priority="medium" time="1662620453" done="1662739491">
         ibcast test
     </note>
-    <note priority="medium" time="1661360998">
-        send variant using pyop2 context manager
-    </note>
-    <note priority="medium" time="1661361014">
+    <note priority="medium" time="1661361014" done="1663007163">
         test for send variant using pyop2 context manager
     </note>
     <note priority="medium" time="1661361036">
         benchmark for send variants
     </note>
-    <note priority="medium" time="1661361065">
+    <note priority="medium" time="1661361065" done="1663007164">
         recv variant using pyop2 context manager
     </note>
-    <note priority="medium" time="1661361080">
+    <note priority="medium" time="1661361080" done="1663007164">
         test for recv variant using pyop2 context manager
     </note>
     <note priority="medium" time="1661361089">
         benchmark for recv variants
-    </note>
-    <note priority="medium" time="1662620401" done="1662751140">
-        isendrecv impl
-    </note>
-    <note priority="medium" time="1662620407" done="1662751141">
-        isendrecv test
     </note>
 </todo>

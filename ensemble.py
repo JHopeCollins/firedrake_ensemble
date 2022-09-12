@@ -182,6 +182,35 @@ class NewEnsemble(object):
         for dat, status in zip_longest(f.dat, statuses or (), fillvalue=None):
             self.ensemble_comm.Recv(dat.data, source=source, tag=tag, status=status)
 
+    def send_new(self, f, dest, tag=0):
+        """
+        Send (blocking) a function f over :attr:`ensemble_comm` to another
+        ensemble rank.
+
+        :arg f: The a :class:`.Function` to send
+        :arg dest: the rank to send to
+        :arg tag: the tag of the message
+        :raises ValueError: if function communicator mismatches the ensemble spatial communicator.
+        """
+        self._check_function(f)
+        with f.dat.vec_ro as vec:
+            self.ensemble_comm.Send(vec.array, dest=dest, tag=tag)
+
+    def recv_new(self, f, source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=None):
+        """
+        Receive (blocking) a function f over :attr:`ensemble_comm` from
+        another ensemble rank.
+
+        :arg f: The a :class:`.Function` to receive into
+        :arg source: the rank to receive from
+        :arg tag: the tag of the message
+        :arg status: MPI.Status object
+        :raises ValueError: if function communicator mismatches the ensemble spatial communicator.
+        """
+        self._check_function(f)
+        with f.dat.vec_wo as vec:
+            self.ensemble_comm.Recv(vec.array, source=source, tag=tag, status=status)
+
     def isend(self, f, dest, tag=0):
         """
         Send (non-blocking) a function f over :attr:`ensemble_comm` to another
