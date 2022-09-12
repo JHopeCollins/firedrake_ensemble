@@ -376,6 +376,9 @@ def test_comm_manager_allreduce():
     f4 = fd.Function(V4)
     f5 = fd.Function(V5)
 
+    with f4.dat.vec_ro as v4, f5.dat.vec_ro as v5:
+        assert v4.getSizes() == v5.getSizes()
+
     with pytest.raises(ValueError):
         ensemble.allreduce(f4, f5)
 
@@ -419,6 +422,9 @@ def test_comm_manager_reduce():
 
     f4 = fd.Function(V4)
     f5 = fd.Function(V5)
+
+    with f4.dat.vec_ro as v4, f5.dat.vec_ro as v5:
+        assert v4.getSizes() == v5.getSizes()
 
     with pytest.raises(ValueError):
         ensemble.reduce(f4, f5)
