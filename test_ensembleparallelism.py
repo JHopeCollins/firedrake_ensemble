@@ -195,36 +195,19 @@ def test_send_and_recv(ensemble, mesh, W,
 
 
 @pytest.mark.parallel(nprocs=6)
-@pytest.mark.parametrize("ncpt", ncpts)
 @pytest.mark.parametrize("blocking", is_blocking)
-def test_sendrecv(ensemble, ncpt, blocking):
+def test_sendrecv(ensemble, mesh, W, urank,
+                  blocking):
+
     ensemble_rank = ensemble.ensemble_comm.rank
     ensemble_size = ensemble.ensemble_comm.size
 
     src_rank = (ensemble_rank - 1) % ensemble_size
     dst_rank = (ensemble_rank + 1) % ensemble_size
 
-    mesh = fd.UnitSquareMesh(10, 10, comm=ensemble.comm)
-
-    x, y = fd.SpatialCoordinate(mesh)
-
-    # unique function for each rank / component index pair
-    def func(rank, cpt=0):
-        return fd.sin(cpt + (rank+1)*fd.pi*x)*fd.cos(cpt + (rank+1)*fd.pi*y)
-
-    # mixed space of dimension ncpt
-    V = fd.FunctionSpace(mesh, "CG", 1)
-    W = fold(mul, [V for _ in range(ncpt)])
-
-    usend = fd.Function(W)
+    usend = urank
     urecv = fd.Function(W).assign(0)
-    u_expect = fd.Function(W)
-
-    for cpt, v in enumerate(usend.split()):
-        v.interpolate(func(ensemble_rank, cpt))
-
-    for cpt, v in enumerate(u_expect.split()):
-        v.interpolate(func(src_rank, cpt))
+    u_expect = unique_function(mesh, src_rank, W)
 
     if blocking:
         sendrecv = ensemble.sendrecv
@@ -237,7 +220,6 @@ def test_sendrecv(ensemble, ncpt, blocking):
     if not blocking:
         MPI.Request.Waitall(requests)
 
-    # after receiving, u should be like u_expect
     assert fd.errornorm(urecv, u_expect) < 1e-8
 
 
