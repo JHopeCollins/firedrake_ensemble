@@ -11,7 +11,7 @@ from ensemble import NewEnsemble
 max_ncpts = 2
 ncpts = [i for i in range(1, max_ncpts + 1)]
 
-max_root = -1
+max_root = 1
 roots = [None] + [i for i in range(0, max_root + 1)]
 
 # is_blocking = [True]
@@ -27,6 +27,7 @@ def function_profile(x, y, rank, cpt):
 def ensemble():
     if fd.COMM_WORLD.size == 1:
         return
+
     return NewEnsemble(fd.COMM_WORLD, 2)
 
 
@@ -34,6 +35,7 @@ def ensemble():
 def mesh(ensemble):
     if fd.COMM_WORLD.size == 1:
         return
+
     return fd.UnitSquareMesh(10, 10, comm=ensemble.comm)
 
 
@@ -42,6 +44,7 @@ def mesh(ensemble):
 def W(request, mesh):
     if fd.COMM_WORLD.size == 1:
         return
+
     V = fd.FunctionSpace(mesh, "CG", 1)
     return fold(mul, [V for _ in range(request.param)])
 
@@ -51,6 +54,7 @@ def W(request, mesh):
 def urank(ensemble, mesh, W):
     if fd.COMM_WORLD.size == 1:
         return
+
     rank = ensemble.ensemble_comm.rank
     u = fd.Function(W)
     x, y = fd.SpatialCoordinate(mesh)
@@ -59,68 +63,47 @@ def urank(ensemble, mesh, W):
     return u
 
 
-@pytest.mark.parallel(nprocs=6)
-@pytest.mark.parametrize("blocking", is_blocking)
-def test_ensemble_allreduce(ensemble, mesh, W, urank,
-                            blocking):
+# sum of urank across all ranks
+@pytest.fixture
+def urank_sum(ensemble, mesh, W):
+    if fd.COMM_WORLD.size == 1:
+        return
+
+    u = fd.Function(W).assign(0)
     x, y = fd.SpatialCoordinate(mesh)
-
-    u_correct = fd.Function(W).assign(0)
-    usum = fd.Function(W).assign(0)
-
-    # calculate sum of all ranks
-    for cpt, v in enumerate(u_correct.split()):
+    for cpt, v in enumerate(u.split()):
         for rank in range(ensemble.ensemble_comm.size):
             v.interpolate(v + function_profile(x, y, rank, cpt))
+    return u
+
+
+@pytest.mark.parallel(nprocs=6)
+@pytest.mark.parametrize("blocking", is_blocking)
+def test_ensemble_allreduce(ensemble, mesh, W, urank, urank_sum,
+                            blocking):
+
+    x, y = fd.SpatialCoordinate(mesh)
+
+    u_reduce = fd.Function(W).assign(0)
 
     if blocking:
-        ensemble.allreduce(urank, usum)
+        ensemble.allreduce(urank, u_reduce)
     else:
-        requests = ensemble.iallreduce(urank, usum)
+        requests = ensemble.iallreduce(urank, u_reduce)
         MPI.Request.Waitall(requests)
 
-    assert fd.errornorm(u_correct, usum) < 1e-4
+    assert fd.errornorm(urank_sum, u_reduce) < 1e-4
 
 
 @pytest.mark.parallel(nprocs=6)
 @pytest.mark.parametrize("root", roots)
-@pytest.mark.parametrize("ncpt", ncpts)
 @pytest.mark.parametrize("blocking", is_blocking)
-def test_ensemble_reduce(ensemble, root, ncpt, blocking):
-    ensemble_size = ensemble.ensemble_comm.size
-    ensemble_rank = ensemble.ensemble_comm.rank
-
-    mesh = fd.UnitSquareMesh(10, 10, comm=ensemble.comm)
+def test_ensemble_reduce(ensemble, mesh, W, urank, urank_sum,
+                         root, blocking):
 
     x, y = fd.SpatialCoordinate(mesh)
 
-    # unique function for each rank / component index pair
-    def func(rank, cpt=0):
-        return fd.sin(cpt + (rank+1)*fd.pi*x)*fd.cos(cpt + (rank+1)*fd.pi*y)
-
-    # mixed space of dimension ncpt
-    V = fd.FunctionSpace(mesh, "CG", 1)
-    W = fold(mul, [V for _ in range(ncpt)])
-
-    u_correct = fd.Function(W).assign(0)
-    u = fd.Function(W).assign(0)
-    usum = fd.Function(W).assign(10)
-
-    for v_correct, v, vsum in zip(u_correct.split(), u.split(), usum.split()):
-        v_correct.assign(0)
-        v.assign(0)
-        vsum.assign(10)
-
-    usum0 = usum.copy(deepcopy=True)
-
-    # initialise local function
-    for cpt, v in enumerate(u.split()):
-        v.interpolate(func(ensemble_rank, cpt))
-
-    # calculate sum of all ranks
-    for cpt, v in enumerate(u_correct.split()):
-        for rank in range(ensemble_size):
-            v.interpolate(v + func(rank, cpt))
+    u_reduce = fd.Function(W).assign(10)
 
     if blocking:
         reduction = ensemble.reduce
@@ -129,19 +112,19 @@ def test_ensemble_reduce(ensemble, root, ncpt, blocking):
 
     # check default root=0 works
     if root is None:
-        requests = reduction(u, usum)
+        requests = reduction(urank, u_reduce)
         root = 0
     else:
-        requests = reduction(u, usum, root=root)
+        requests = reduction(urank, u_reduce, root=root)
 
     if not blocking:
         MPI.Request.Waitall(requests)
 
-    # test
-    if ensemble_rank == root:
-        assert fd.errornorm(u_correct, usum) < 1e-4
+    # only u_reduce on rank root should be modified
+    if ensemble.ensemble_comm.rank == root:
+        assert fd.errornorm(urank_sum, u_reduce) < 1e-4
     else:
-        assert fd.errornorm(usum0, usum) < 1e-4
+        assert fd.errornorm(fd.Function(W).assign(10), u_reduce) < 1e-4
 
 
 @pytest.mark.parallel(nprocs=6)
