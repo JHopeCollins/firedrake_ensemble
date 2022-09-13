@@ -9,6 +9,15 @@
     <note priority="medium" time="1661360998" done="1663007151">
         send variant using pyop2 context manager
     </note>
+    <note priority="medium" time="1661361014" done="1663007163">
+        test for send variant using pyop2 context manager
+    </note>
+    <note priority="medium" time="1661361065" done="1663007164">
+        recv variant using pyop2 context manager
+    </note>
+    <note priority="medium" time="1661361080" done="1663007164">
+        test for recv variant using pyop2 context manager
+    </note>
     <note priority="medium" time="1662620344" done="1662750352">
         sendrecv impl
     </note>
@@ -39,19 +48,10 @@
     <note priority="medium" time="1662620453" done="1662739491">
         ibcast test
     </note>
-    <note priority="medium" time="1661361014" done="1663007163">
-        test for send variant using pyop2 context manager
-    </note>
-    <note priority="medium" time="1661361036">
+    <note priority="medium" time="1661361036" done="1663078890">
         benchmark for send variants
     </note>
-    <note priority="medium" time="1661361065" done="1663007164">
-        recv variant using pyop2 context manager
-    </note>
-    <note priority="medium" time="1661361080" done="1663007164">
-        test for recv variant using pyop2 context manager
-    </note>
-    <note priority="medium" time="1661361089">
+    <note priority="medium" time="1661361089" done="1663078891">
         benchmark for recv variants
     </note>
 </todo>
