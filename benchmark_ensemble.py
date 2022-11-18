@@ -113,7 +113,10 @@ def benchmark_send_and_recv(nspatial, nx, ncpts, nwarmups, nrepeats,
 
 if __name__ == "__main__":
 
-    nspatial = 1
+    if fd.COMM_WORLD.size % 2 != 0:
+        raise ValueError("Number of MPI ranks must be even")
+
+    nspatial = fd.COMM_WORLD.size//2
     nx = 512
     ncpts = 20
     nwarmups = 0
