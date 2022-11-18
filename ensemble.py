@@ -61,7 +61,7 @@ class NewEnsemble(object):
         :arg f: The a :class:`.Function` to allreduce.
         :arg f_reduced: the result of the reduction.
         :arg op: MPI reduction operator.
-        :raises ValueError: if function communicators mismatch each other or the ensemble spatial communicator, or is the functions are in different spaces
+        :raises ValueError: if function communicators mismatch each other or the ensemble spatial communicator, or if the functions are in different spaces
         """
         self._check_function(f, f_reduced)
 
@@ -78,7 +78,7 @@ class NewEnsemble(object):
         :arg f_reduced: the result of the reduction.
         :arg op: MPI reduction operator.
         :returns: list of MPI.Request objects (one for each of f.split()).
-        :raises ValueError: if function communicators mismatch each other or the ensemble spatial communicator, or is the functions are in different spaces
+        :raises ValueError: if function communicators mismatch each other or the ensemble spatial communicator, or if the functions are in different spaces
         """
         self._check_function(f, f_reduced)
 

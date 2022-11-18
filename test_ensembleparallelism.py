@@ -304,12 +304,15 @@ def test_comm_manager_allreduce():
         ensemble.allreduce(f3, f2)
 
     # same function communicator but different function spaces
-    V3 = fd.FunctionSpace(mesh, "DG", 0)
-    g = fd.Function(V3)
+    mesh3 = fd.UnitSquareMesh(2, 2, comm=ensemble.comm)
+    V3a = fd.FunctionSpace(mesh3, "DG", 0)
+    V3b = fd.FunctionSpace(mesh3, "DG", 1)
+    ga = fd.Function(V3a)
+    gb = fd.Function(V3b)
     with pytest.raises(ValueError):
-        ensemble.allreduce(f, g)
+        ensemble.allreduce(ga, gb)
 
-    # same size but different function spaces
+    # same size of underlying data but different function spaces
     mesh4 = fd.UnitSquareMesh(4, 2, comm=ensemble.comm)
     mesh5 = fd.UnitSquareMesh(2, 4, comm=ensemble.comm)
 
@@ -351,12 +354,15 @@ def test_comm_manager_reduce():
         ensemble.reduce(f3, f2)
 
     # same function communicator but different function spaces
-    V3 = fd.FunctionSpace(mesh, "DG", 0)
-    g = fd.Function(V3)
+    mesh3 = fd.UnitSquareMesh(2, 2, comm=ensemble.comm)
+    V3a = fd.FunctionSpace(mesh3, "DG", 0)
+    V3b = fd.FunctionSpace(mesh3, "DG", 1)
+    ga = fd.Function(V3a)
+    gb = fd.Function(V3b)
     with pytest.raises(ValueError):
-        ensemble.reduce(f, g)
+        ensemble.reduce(ga, gb)
 
-    # same size but different function spaces
+    # same size of underlying data but different function spaces
     mesh4 = fd.UnitSquareMesh(4, 2, comm=ensemble.comm)
     mesh5 = fd.UnitSquareMesh(2, 4, comm=ensemble.comm)
 
